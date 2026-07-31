@@ -8,17 +8,16 @@ import {
   IsUUID,
 } from 'class-validator';
 import { IsAfterOrEqualDate } from '../../../common/decorators/is-after-or-equal-date.decorator';
-import {
-  DASHBOARD_PERIODS,
-  DASHBOARD_TRANSACTION_TYPE_FILTERS,
-} from './dashboard-query.constants';
-import type {
-  DashboardPeriod,
-  DashboardTransactionTypeFilter,
-} from './dashboard-query.constants';
+import { DASHBOARD_PERIODS } from './dashboard-query.constants';
+import type { DashboardPeriod } from './dashboard-query.constants';
 import { ValidateCustomPeriodRange } from './validate-custom-period-range.decorator';
 
-export class DashboardQueryDto {
+/**
+ * Base comum a todo endpoint de dashboard filtrado por período: period,
+ * dateFrom/dateTo (obrigatórios só quando period=custom), categoryIds e
+ * ministryId. Reaproveitada por summary, line, by-category e comparison.
+ */
+export abstract class DashboardPeriodFilterQueryDto {
   @ApiPropertyOptional({
     enum: DASHBOARD_PERIODS,
     default: 'currentMonth',
@@ -68,14 +67,6 @@ export class DashboardQueryDto {
     message: 'categoryIds deve conter uuids válidos.',
   })
   categoryIds?: string[];
-
-  @ApiPropertyOptional({
-    enum: DASHBOARD_TRANSACTION_TYPE_FILTERS,
-    default: 'all',
-  })
-  @IsOptional()
-  @IsIn(DASHBOARD_TRANSACTION_TYPE_FILTERS, { message: 'type inválido.' })
-  type: DashboardTransactionTypeFilter = 'all';
 
   @ApiPropertyOptional({
     description: 'Filtra por um ministério (oculta transações sem vínculo)',

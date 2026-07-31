@@ -127,6 +127,9 @@ model Report {
   churchId    String   @map("church_id") @db.Uuid
   // Chave interna no bucket S3; nunca exposta diretamente ao cliente
   filePath    String   @map("file_path")
+  // Snapshot da configuração usada na geração (para o histórico ser informativo):
+  // { dateFrom, dateTo, categoryIds, sections, includeMember }. Nunca guarda a senha.
+  params      Json     @default("{}")
   generatedAt DateTime @default(now()) @map("generated_at")
 
   church Church @relation(fields: [churchId], references: [id])

@@ -1,0 +1,63 @@
+service: report-generator
+
+useDotenv: true
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${env:AWS_REGION, 'us-east-1'}
+  memorySize: 2048
+  timeout: 60
+  tags:
+    Project: Miyrah
+  environment:
+    LOG_LEVEL: ${env:LOG_LEVEL, 'INFO'}
+    S3_ENDPOINT: ${env:S3_ENDPOINT, ''}
+    S3_BUCKET: ${env:S3_BUCKET}
+    S3_ACCESS_KEY: ${env:S3_ACCESS_KEY, ''}
+    S3_SECRET_KEY: ${env:S3_SECRET_KEY, ''}
+
+package:
+  individually: true
+  patterns:
+    # Assets lidos em runtime (não passam pelo bundle do esbuild).
+    - 'assets/**'
+    - 'node_modules/chart.js/dist/chart.umd.js'
+
+plugins:
+  - serverless-esbuild
+  - serverless-offline
+  - serverless-iam-roles-per-function
+
+custom:
+  esbuild:
+    bundle: true
+    minify: false
+    sourcemap: true
+    target: node20
+    platform: node
+    format: cjs
+    keepOutputDirectory: true
+    # Chromium e puppeteer não devem ser bundlados (binário + resolução dinâmica).
+    external:
+      - '@sparticuz/chromium'
+      - 'puppeteer-core'
+      - 'puppeteer'
+
+  serverless-offline:
+    httpPort: 3001
+    lambdaPort: 3005
+    noPrependStageInUrl: true
+
+functions:
+  process:
+    handler: src/main.handler
+    description: Renderiza o ReportPayload em PDF e sobe ao S3 (invoke síncrono)
+    timeout: 60
+    memorySize: 2048
+    # A função só precisa escrever no bucket de relatórios.
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - s3:PutObject
+        Resource: 'arn:aws:s3:::${env:S3_BUCKET}/*'

@@ -3,7 +3,7 @@ import { ApiProperty } from '@nestjs/swagger';
 export class DashboardLinePointDto {
   @ApiProperty({
     description:
-      'Início do bucket (dia "YYYY-MM-DD" ou mês "YYYY-MM-01", conforme a granularidade do período)',
+      'Início do ponto: o próprio dia ("YYYY-MM-DD") para granularity=day, ou o domingo que abre a semana para granularity=week',
     example: '2026-07-01',
   })
   date!: string;

@@ -12,9 +12,9 @@ Backend em NestJS do sistema Miyrah, um sistema de gestão financeira para igrej
 > Este CLAUDE.md **não repete** aquele conteúdo — ele documenta apenas decisões de arquitetura/engenharia da API. Sempre que uma dúvida for sobre comportamento de tela, campo ou regra de negócio, a resposta está lá, não aqui.
 
 > [!note] Estado atual do código
-> Itens 1–3 do roadmap implementados: Docker Compose (Postgres + MinIO + serviço `dev`), schema Prisma com migration init, fundações da aplicação (config Zod, envelope global de resposta/erro, prefixo `/v1`, Swagger em `/docs`, PrismaModule com extension de multi-tenancy via AsyncLocalStorage) e o módulo `auth` completo (cadastro, login, guard global `APP_GUARD`, recuperação de senha) com testes unitários e e2e. Os CRUDs de feature (members, ministries, categories, transactions), dashboard, relatórios e churches ainda não existem.
+> Todo o roadmap está implementado, com testes unitários e e2e: fundações (Docker Compose, schema Prisma + migrations, config Zod, envelope global de resposta/erro, prefixo `/v1`, Swagger em `/docs`, PrismaModule com extension de multi-tenancy via AsyncLocalStorage), `auth` (cadastro, login, guard global, recuperação de senha), os CRUDs `members`/`ministries`/`categories`/`transactions`, `account` (perfil, senha, exclusão), `dashboard` (agregações) e `reports` (geração de PDF via a Lambda `report-generator/`).
 >
-> Ambiente de dev roda em containers: todo `npm`/`npx` deve ser executado dentro do serviço `dev` (`docker exec miyrah-api-dev-1 ...`) — o `node_modules` do host não é usado.
+> Ambiente de dev roda em containers: todo `npm`/`npx` da API deve ser executado dentro do serviço `dev` (`docker exec miyrah-api-dev-1 ...`) — o `node_modules` do host não é usado. **Exceção:** o `report-generator/` é um projeto à parte que roda no **host** (`npm`/`serverless offline` diretamente), pois precisa do Chromium local.
 
 ## Stack
 
@@ -79,6 +79,7 @@ O critério de organização não é "feature vs infra", e sim "é um módulo Ne
 
 ```
 prisma/            # schema.prisma + migrations (o código Nest fica em src/)
+report-generator/  # microsserviço serverless (Lambda) que renderiza o PDF — projeto à parte, roda no host
 src/
   common/            # sem @Module — guards, decorators, filters, pipes compartilhados
   config/            # sem @Module — validação de env (Zod)
@@ -92,6 +93,7 @@ src/
     categories/
     transactions/
     dashboard/         # agregações de Início e Dashboard
+    reports/           # geração de PDF (monta o payload, invoca a Lambda, salva histórico + link)
 ```
 
 Cada módulo de feature segue o padrão Nest: `*.module.ts`, `*.controller.ts`, `*.service.ts`, `dto/`.
@@ -119,9 +121,14 @@ Cada módulo de feature segue o padrão Nest: `*.module.ts`, `*.controller.ts`, 
 
 ## Relatórios em PDF
 
-- Geração via Puppeteer (renderiza um template HTML/CSS do resumo agregado e converte para PDF).
-- PDF gerado é enviado para um bucket S3-compatible; o endpoint de download retorna uma URL assinada de curta duração (gerada sob demanda, não armazenada como link permanente).
-- Em ambiente local, o bucket é servido por MinIO (a subir via Docker Compose, junto do Postgres).
+A geração é isolada num **microsserviço serverless** (`report-generator/`, Serverless Framework), não no processo da API. Fluxo (ver `wiki/api/_plano-backend-reports.md`):
+
+- O módulo `reports` valida o pedido, agrega os dados dos blocos marcados (`report-aggregation.service` + `report-payload.builder`) e monta um `ReportPayload` JSON.
+- A API **invoca a Lambda de forma síncrona** (`@aws-sdk/client-lambda`, `InvokeCommand` RequestResponse; `LambdaReportRenderer`). A Lambda é um renderizador puro: abre o Chromium (`puppeteer-core` + `@sparticuz/chromium`; em dev usa `puppeteer` full), renderiza um template HTML + Chart.js de slides 16:9, exporta o PDF, sobe ao S3 (privado) e devolve só a `key`.
+- Falha/timeout da Lambda → `5xx` e **nenhum** registro é gravado (sem histórico órfão). O `INSERT` em `church_reports` (com o snapshot `params`) só ocorre após a `key` confirmada.
+- Download: `S3ReportStorage` gera uma **URL assinada de curta duração** (`@aws-sdk/s3-request-presigner`, TTL via `REPORT_DOWNLOAD_URL_TTL`) sob demanda; o `filePath` interno nunca é exposto.
+- `REPORT_RENDERER` e `REPORT_STORAGE` são tokens de injeção → substituídos por fakes no e2e (sem AWS).
+- **Topologia dev:** a API roda no container `dev` e a Lambda roda no host via `serverless offline` (invoke em `:3005`) — a API a alcança por `LAMBDA_ENDPOINT=http://host.docker.internal:3005`. O bucket é o MinIO do Docker Compose; as URLs assinadas usam `S3_PUBLIC_ENDPOINT` (ex.: `http://localhost:9000`) para serem abríveis no browser do host. Ver `report-generator/README.md`.
 
 ## Testes
 
@@ -139,6 +146,9 @@ Validadas via schema Zod no bootstrap (falha rápido se faltar alguma). Lista in
 - `JWT_EXPIRATION_REMEMBER_ME` (30 dias)
 - `RESEND_API_KEY`
 - `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`
+- `S3_PUBLIC_ENDPOINT` (opcional; endpoint público para as URLs assinadas de download — em dev, `http://localhost:9000`; cai no `S3_ENDPOINT`)
+- `AWS_REGION` (default `us-east-1`), `LAMBDA_REPORT_FUNCTION_NAME` (default `report-generator-dev-process`), `LAMBDA_ENDPOINT` (opcional; em dev aponta ao serverless-offline)
+- `REPORT_DOWNLOAD_URL_TTL` (default `900` — TTL em segundos da URL de download)
 - `PORT`
 
 ## Convenção de commits
@@ -150,7 +160,7 @@ Conventional Commits (`feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `docs:`, 
 1. ~~Docker Compose com Postgres local (+ MinIO para storage de relatórios)~~ ✅
 2. ~~Inicializar Prisma, definir schema e primeira migration~~ ✅
 3. ~~Módulo `auth` (cadastro, login, recuperação de senha)~~ ✅
-4. CRUDs de `members`, `ministries`, `categories`, `transactions`
-5. Agregações de `dashboard`/Início (cards, gráficos)
-6. Geração de relatórios em PDF + storage
-7. `churches` — perfil, alteração de senha, exclusão de conta
+4. ~~CRUDs de `members`, `ministries`, `categories`, `transactions`~~ ✅
+5. ~~Agregações de `dashboard`/Início (cards, gráficos)~~ ✅
+6. ~~Geração de relatórios em PDF + storage~~ ✅ (microsserviço `report-generator/` + módulo `reports`)
+7. ~~`churches` — perfil, alteração de senha, exclusão de conta~~ ✅ (módulo `account`)

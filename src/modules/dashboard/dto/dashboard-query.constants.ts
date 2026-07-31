@@ -22,3 +22,8 @@ export const DASHBOARD_COMPARISON_GROUP_BY_OPTIONS = ['month', 'week'] as const;
 
 export type DashboardComparisonGroupBy =
   (typeof DASHBOARD_COMPARISON_GROUP_BY_OPTIONS)[number];
+
+export const DASHBOARD_LINE_GRANULARITY_OPTIONS = ['day', 'week'] as const;
+
+export type DashboardLineGranularity =
+  (typeof DASHBOARD_LINE_GRANULARITY_OPTIONS)[number];

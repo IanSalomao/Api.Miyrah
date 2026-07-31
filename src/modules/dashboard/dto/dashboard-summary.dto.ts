@@ -2,44 +2,38 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class DashboardSummaryDto {
   @ApiProperty({
-    description: 'Saldo acumulado (todas as transações, sem filtro de período)',
-    example: 12450.5,
-  })
-  balance!: number;
-
-  @ApiProperty({
-    description: 'Entradas no período filtrado',
-    example: 8300,
+    description: 'Entradas no período filtrado (magnitude, sempre positivo)',
+    example: 5000.0,
   })
   income!: number;
 
   @ApiProperty({
     description: 'Saídas no período filtrado (magnitude, sempre positivo)',
-    example: 3200,
+    example: 3200.0,
   })
   expense!: number;
 
   @ApiProperty({
-    description: 'income - expense do período filtrado',
-    example: 5100,
+    description: 'income − expense do período filtrado',
+    example: 1800.0,
   })
   periodBalance!: number;
 
-  @ApiProperty({ example: 128 })
-  membersCount!: number;
+  @ApiProperty({
+    description: 'Quantidade de transações de entrada no período',
+    example: 42,
+  })
+  incomeCount!: number;
 
   @ApiProperty({
-    description: 'Total de transações (todas, sem filtro de período)',
-    example: 342,
+    description: 'Quantidade de transações de saída no período',
+    example: 30,
+  })
+  expenseCount!: number;
+
+  @ApiProperty({
+    description: 'Total de transações do período (incomeCount + expenseCount)',
+    example: 72,
   })
   transactionsCount!: number;
-
-  @ApiProperty({ example: 6 })
-  ministriesCount!: number;
-
-  @ApiProperty({
-    description: 'Média do valor absoluto das transações (todas)',
-    example: 218.75,
-  })
-  averageTicket!: number;
 }
